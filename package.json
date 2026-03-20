@@ -1,0 +1,68 @@
+{
+  "name": "cursor-usage-counter",
+  "displayName": "Cursor Usage Counter",
+  "description": "Missing usage bar for Cursor. Shows included usage, auto/composer, API, and on-demand spend.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursorUsageCounter.refresh",
+        "title": "Cursor Usage: Refresh"
+      },
+      {
+        "command": "cursorUsageCounter.openCursorBilling",
+        "title": "Cursor Usage: Open Settings"
+      },
+      {
+        "command": "cursorUsageCounter.showLog",
+        "title": "Cursor Usage: Show Log"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor Usage Counter",
+      "properties": {
+        "cursorUsageCounter.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 5,
+          "description": "Seconds between automatic refreshes (minimum 5)."
+        },
+        "cursorUsageCounter.statusBarPriority": {
+          "type": "number",
+          "default": -1000,
+          "description": "Lower = further right on the status bar."
+        },
+        "cursorUsageCounter.logApiResponses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append full API request/response details to Output > Cursor Usage Counter (can be noisy when polling)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vsix": "vsce package --allow-missing-repository --skip-license",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.3.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  }
+}
