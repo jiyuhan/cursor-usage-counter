@@ -75,9 +75,9 @@ These are typical combinations you might see in the status bar:
 
 ## Settings
 
-- `cursorUsageCounter.refreshIntervalSeconds` (default `10`, minimum `5`)
+- `cursorUsageCounter.refreshIntervalSeconds` (default `30`, minimum `10`)
 - `cursorUsageCounter.statusBarPriority` (default `-1000`)
-- `cursorUsageCounter.logApiResponses` (default `true`)
+- `cursorUsageCounter.logApiResponses` (default `false`)
 
 ## Local Development
 

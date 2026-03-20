@@ -2,13 +2,26 @@
   "name": "cursor-usage-counter",
   "displayName": "Cursor Usage Counter",
   "description": "Missing usage bar for Cursor. Shows included usage, auto/composer, API, and on-demand spend.",
-  "version": "0.1.0",
-  "publisher": "local",
+  "version": "0.1.1",
+  "publisher": "jhan1215",
+  "license": "MIT",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": ["Visualization", "Machine Learning", "Other"],
+  "keywords": [
+    "cursor",
+    "cursor usage",
+    "usage tracker",
+    "status bar",
+    "billing",
+    "spending",
+    "cost tracking",
+    "token usage",
+    "api usage",
+    "developer productivity"
+  ],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
@@ -31,9 +44,9 @@
       "properties": {
         "cursorUsageCounter.refreshIntervalSeconds": {
           "type": "number",
-          "default": 10,
-          "minimum": 5,
-          "description": "Seconds between automatic refreshes (minimum 5)."
+          "default": 30,
+          "minimum": 10,
+          "description": "Seconds between automatic refreshes (minimum 10)."
         },
         "cursorUsageCounter.statusBarPriority": {
           "type": "number",
@@ -42,7 +55,7 @@
         },
         "cursorUsageCounter.logApiResponses": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Append full API request/response details to Output > Cursor Usage Counter (can be noisy when polling)."
         }
       }
@@ -52,7 +65,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "vsix": "vsce package --allow-missing-repository --skip-license",
+    "vsix": "vsce package --allow-missing-repository",
     "test": "vitest run"
   },
   "devDependencies": {

@@ -21,11 +21,17 @@ const initSqlJs = require('sql.js/dist/sql-asm.js');
 const CONNECT_PATH = '/aiserver.v1.DashboardService/GetCurrentPeriodUsage';
 const HOSTS = ['api2.cursor.sh', 'api3.cursor.sh'] as const;
 const DEEPLINK_SETTINGS = 'cursor://anysphere.cursor-deeplink/settings';
+const AUTH_DB_REFRESH_MS = 5 * 60 * 1000;
+const AUTH_FALLBACK_TTL_MS = 12 * 60 * 60 * 1000;
 
 const log = vscode.window.createOutputChannel('Cursor Usage Counter');
+let sqlRuntimePromise: Promise<{
+  Database: new (data?: Uint8Array) => { exec: (sql: string) => Array<{ values: unknown[][] }>; close: () => void };
+}> | null = null;
+let lastAuthSnapshot: { accessToken: string | null; planLabel: string | null; readAt: number } | null = null;
 
 function logApiVerbose(): boolean {
-  return vscode.workspace.getConfiguration('cursorUsageCounter').get<boolean>('logApiResponses', true);
+  return vscode.workspace.getConfiguration('cursorUsageCounter').get<boolean>('logApiResponses', false);
 }
 
 function maskToken(t: string): string {
@@ -45,14 +51,12 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   let poll: ReturnType<typeof setInterval> | undefined;
-  let debounce: ReturnType<typeof setTimeout> | undefined;
-
   const armPoll = (): void => {
     if (poll) {
       clearInterval(poll);
     }
-    const s = vscode.workspace.getConfiguration('cursorUsageCounter').get<number>('refreshIntervalSeconds', 10);
-    poll = setInterval(refresh, Math.max(5, s) * 1000);
+    const s = vscode.workspace.getConfiguration('cursorUsageCounter').get<number>('refreshIntervalSeconds', 30);
+    poll = setInterval(refresh, Math.max(10, s) * 1000);
   };
 
   context.subscriptions.push(
@@ -80,19 +84,10 @@ export function activate(context: vscode.ExtensionContext): void {
         refresh();
       }
     }),
-    vscode.workspace.onDidChangeTextDocument(() => {
-      if (debounce) {
-        clearTimeout(debounce);
-      }
-      debounce = setTimeout(refresh, 1500);
-    }),
     {
       dispose: () => {
         if (poll) {
           clearInterval(poll);
-        }
-        if (debounce) {
-          clearTimeout(debounce);
         }
       },
     },
@@ -255,7 +250,9 @@ async function paint(items: UsageItems): Promise<void> {
     const parts = [items.total, items.autoComposer, items.api, items.spend]
       .filter((x) => x.text.trim() !== '')
       .map((x) => x.text);
-    log.appendLine(`[status bar] ${new Date().toISOString()} ${parts.join(' · ')}`);
+    if (verbose) {
+      log.appendLine(`[status bar] ${new Date().toISOString()} ${parts.join(' · ')}`);
+    }
     if (verbose) {
       const keys = planUsagePercentFieldKeys(data);
       log.appendLine(
@@ -285,7 +282,24 @@ async function readAccessToken(verbose: boolean): Promise<string | null> {
   return (await readAuthMeta(verbose)).accessToken;
 }
 
-async function readAuthMeta(verbose: boolean): Promise<{ accessToken: string | null; planLabel: string | null }> {
+async function readAuthMeta(
+  verbose: boolean,
+  forceFresh = false,
+): Promise<{ accessToken: string | null; planLabel: string | null }> {
+  if (
+    !forceFresh &&
+    lastAuthSnapshot &&
+    Date.now() - lastAuthSnapshot.readAt < AUTH_DB_REFRESH_MS
+  ) {
+    if (verbose) {
+      log.appendLine('[token] using recent cached auth metadata (skip DB read)');
+    }
+    return {
+      accessToken: lastAuthSnapshot.accessToken,
+      planLabel: lastAuthSnapshot.planLabel,
+    };
+  }
+
   const dbPath = cursorDb();
   if (!dbPath || !fs.existsSync(dbPath)) {
     if (verbose) {
@@ -297,7 +311,7 @@ async function readAuthMeta(verbose: boolean): Promise<{ accessToken: string | n
     log.appendLine(`[token] opening ${dbPath}`);
   }
   try {
-    const SQL = await initSqlJs();
+    const SQL = await getSqlRuntime();
     const db = new SQL.Database(fs.readFileSync(dbPath));
     try {
       const r = db.exec(
@@ -321,6 +335,7 @@ async function readAuthMeta(verbose: boolean): Promise<{ accessToken: string | n
           `[token] cursorAuth/stripeMembershipType ${plan ?? '(missing)'}`,
         );
       }
+      lastAuthSnapshot = { accessToken: token, planLabel: plan, readAt: Date.now() };
       return { accessToken: token, planLabel: plan };
     } finally {
       db.close();
@@ -328,9 +343,29 @@ async function readAuthMeta(verbose: boolean): Promise<{ accessToken: string | n
   } catch (err) {
     if (verbose) {
       log.appendLine(`[token] sql.js error: ${err instanceof Error ? err.message : String(err)}`);
+      if (lastAuthSnapshot?.accessToken && Date.now() - lastAuthSnapshot.readAt < AUTH_FALLBACK_TTL_MS) {
+        log.appendLine('[token] using last successful auth snapshot due to DB read failure');
+      }
+    }
+    if (lastAuthSnapshot?.accessToken && Date.now() - lastAuthSnapshot.readAt < AUTH_FALLBACK_TTL_MS) {
+      return {
+        accessToken: lastAuthSnapshot.accessToken,
+        planLabel: lastAuthSnapshot.planLabel,
+      };
     }
     return { accessToken: null, planLabel: null };
   }
+}
+
+async function getSqlRuntime(): Promise<{
+  Database: new (data?: Uint8Array) => { exec: (sql: string) => Array<{ values: unknown[][] }>; close: () => void };
+}> {
+  if (!sqlRuntimePromise) {
+    sqlRuntimePromise = Promise.resolve(initSqlJs()) as Promise<{
+      Database: new (data?: Uint8Array) => { exec: (sql: string) => Array<{ values: unknown[][] }>; close: () => void };
+    }>;
+  }
+  return sqlRuntimePromise;
 }
 
 /**
@@ -382,7 +417,7 @@ async function fetchUsageWithTokenRefresh(initialToken: string, verbose: boolean
     }
 
     await delay(750);
-    const rotated = await readAccessToken(verbose);
+    const rotated = (await readAuthMeta(verbose, true)).accessToken;
     if (!rotated) {
       throw new Error('auth expired: token unavailable; sign in again');
     }
